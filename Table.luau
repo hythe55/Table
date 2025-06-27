@@ -1,5 +1,5 @@
 --[[
-v1.1 - 6/21/2025 3:03PM
+v2 - 6/27/2025 2:46AM
 written by hythe55 with some of the metatable stuff taken from xendatro
 ]]
 
@@ -17,6 +17,7 @@ export type Table = {
 	Changed: typeof(Signal.new()),
 	IsFrozen: boolean,
 	Raw: {any},
+	Parent: Table?,
 
 	Insert: <V>(self: V, value: any) -> (),
 	Remove: <V>(self: V, pos: number|string?) -> (),
@@ -36,11 +37,12 @@ export type Table = {
 
 local Properties = {}
 
-function Table.new<T>(t: T?): Table & T
+function Table.new<T>(t: T?, parent: Table?): Table & T
 	local self = {}
 	self.Changed = Signal.new()
-	self.IsFrozewn = false
+	self.IsFrozen = false
 	self.Raw = t
+	self.Parent = parent
 
 	local previous = table.clone(t)
 
@@ -52,7 +54,8 @@ function Table.new<T>(t: T?): Table & T
 			local oldTab = table.clone(self.Raw)
 			self.Raw[i] = v
 			if table.isdifferent(self.Raw, oldTab) then
-				self.Changed:Fire()
+				--self.Changed:Fire()
+				self:_fireChangedForParents()
 			end
 		end,
 		__tonumber = function()
@@ -75,7 +78,7 @@ function Table.new<T>(t: T?): Table & T
 	local function wrapRecursive(t)
 		local out = {}
 		for k, v in t do
-			out[k] = typeof(v) == "table" and Table.new(v) or v
+			out[k] = typeof(v) == "table" and Table.new(v, self) or v
 		end
 		return out
 	end
@@ -88,7 +91,8 @@ function Table:Insert(value: any)
 	assert(self ~= Table, "Method must be called on Table class")
 	assert(value, "wrong number of arguments to 'Insert'")
 	table.insert(self, value)
-	self.Changed:Fire(#self, value)
+	--self.Changed:Fire(#self, value)
+	self:_fireChangedForParents()
 end
 
 --[[When provided with a number behaves like table.remove while firing Table.Changed.
@@ -108,7 +112,8 @@ function Table:Remove(pos: number|string?)
 		error(pos.. " not found in Table")
 	end
 
-	self.Changed:Fire(pos, nil, oldValue)
+	--self.Changed:Fire(pos, nil, oldValue)
+	self:_fireChangedForParents()
 end
 
 function Table:Clone()
@@ -178,13 +183,14 @@ function Table:Clear()
 	assert(self ~= Table, "Method must be called on Table class")
 	table.clear(self.Raw)
 	table.clear(self)
-	self.Changed:Fire()
+	--self.Changed:Fire()
+	self:_fireChangedForParents()
 end
 
 --[[Clears the table and its events from memory.]]
 function Table:Destroy()
 	assert(self ~= Table, "Method must be called on Table class")
-	
+
 	for k, v in pairs(self.Raw) do
 		if typeof(v) == "table" then
 			local mt = getmetatable(v)
@@ -199,6 +205,19 @@ function Table:Destroy()
 	table.clear(self.Raw)
 	table.clear(self)
 	setmetatable(self, nil)
+end
+
+function Table:_fireChangedForParents()
+	local function run(t: Table)
+		t.Changed:Fire()
+		if t.Parent then
+			run(t.Parent)
+		end
+	end
+	self.Changed:Fire()
+	if self.Parent then
+		run(self.Parent)
+	end
 end
 
 table.freeze(Table)
