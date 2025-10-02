@@ -1,11 +1,10 @@
 --[[
 Class that provides an enhanced table wrapper with change tracking,
 recursive nesting support, and additional utility methods.
-v2.3 - 8/23/2025 11:29PM
+v2.4 - 10/2/2025 3:46PM
 ]]
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Signal = require(ReplicatedStorage.Classes.Signal)
-local table: typeof(require(ReplicatedStorage.Libraries.table)) = require(ReplicatedStorage.Libraries.table)
 local Table = {}
 
 export type Table = {
@@ -13,6 +12,8 @@ export type Table = {
 	IsFrozen: boolean,
 	Raw: {any},
 	Parent: Table?,
+
+	IsDifferent: <V>(self:V, t: {V}) -> boolean,
 
 	Insert: <V>(self: V, value: any) -> (),
 	Remove: <V>(self: V, pos: number|string?) -> (),
@@ -31,6 +32,32 @@ export type Table = {
 }
 
 local Properties = {}
+
+--Checks if a table is different
+local function isDifferent<V>(t1: {V}, t2: {V}): boolean
+	if t1 == t2 then
+		return false
+	end
+
+	for key, value in t1 do
+		local otherValue = t2[key]
+		if typeof(value) == "table" and typeof(otherValue) == "table" then
+			if isDifferent(value, otherValue) then
+				return true
+			end
+		elseif value ~= otherValue then
+			return true
+		end
+	end
+
+	for key in t2 do
+		if t1[key] == nil then
+			return true
+		end
+	end
+
+	return false
+end
 
 --[[
 Creates a new instance of the Table class with optional initial data and parent.
@@ -51,10 +78,13 @@ function Table.new<T>(t: T?, parent: Table?): Table & T
 		__newindex = function(t, i, v)
 			local oldTab = table.clone(self.Raw)
 			self.Raw[i] = v
-			if table.isdifferent(self.Raw, oldTab) then
-				--self.Changed:Fire()
+			if self:IsDifferent(oldTab) then
 				self:_fireChangedForParents()
 			end
+			--[[if table.isdifferent(self.Raw, oldTab) then
+				--self.Changed:Fire()
+				self:_fireChangedForParents()
+			end]]
 		end,
 		__iter = function(t)
 			return next, t.Raw
@@ -91,6 +121,16 @@ function Table:Insert(value: any)
 	table.insert(self.Raw, value)
 	--self.Changed:Fire(#self, value)
 	self:_fireChangedForParents()
+end
+
+--[[
+Checks if a table is different from another table.
+]]
+function Table:IsDifferent(t: {V}): boolean
+	local t1 = self.Raw or self
+	local t2 = t.Raw or t
+	
+	return isDifferent(t1, t2)
 end
 
 --[[
